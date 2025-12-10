@@ -67,6 +67,7 @@ class MessageOrchestrator:
         if answer_id: adapter.send_feedback_request(user_id, answer_id)
 
     async def process_message(self, msg: IncomingMessage):
+        """Alur utama pemrosesan pesan chat."""
         adapter = self.adapters.get(msg.platform)
         if not adapter:
             logger.warning(f"No adapter found for platform: {msg.platform}")
@@ -77,23 +78,24 @@ class MessageOrchestrator:
         except Exception:
             pass
 
-        # === LOGIKA ID ===
+        # === LOGIKA ID (DIPERBAIKI) ===
         if not msg.conversation_id:
-            # 1. Cek Thread Key (Prioritas Utama untuk Email)
+            # 1. KHUSUS EMAIL: Cari Session ID berdasarkan Thread Key (ConversationId dari Azure)
             if msg.platform == "email" and msg.metadata and msg.metadata.get("thread_key"):
                 thread_key = msg.metadata.get("thread_key")
                 existing_id = self.repo_msg.get_conversation_by_thread(thread_key)
+                
                 if existing_id:
+                    # KETEMU! Lanjutkan sesi ini.
                     msg.conversation_id = existing_id
-                    logger.info(f"Email Thread '{thread_key}' continued session: {existing_id}")
-            
-            # 2. Jika bukan email thread lama, cek active session user
-            if not msg.conversation_id:
-                if msg.platform != "email":
-                    msg.conversation_id = self.repo_conv.get_active_id(msg.platform_unique_id, msg.platform)
+                    logger.info(f"THREAD MATCH: '{thread_key}' linked to Session {existing_id}")
                 else:
-                    # Email thread baru -> Session Baru (Biarkan None)
-                    logger.info(f"New Email Thread detected. Starting new session.")
+                    # TIDAK KETEMU -> Berarti ini Thread Email Baru -> Biarkan None (New Session)
+                    logger.info(f"NEW THREAD DETECTED: '{thread_key}'. Starting new session.")
+            
+            # 2. NON-EMAIL (WA/IG): Pakai Active User Session
+            elif msg.platform != "email":
+                msg.conversation_id = self.repo_conv.get_active_id(msg.platform_unique_id, msg.platform)
 
         # Kirim ke Chatbot
         try:
@@ -114,7 +116,7 @@ class MessageOrchestrator:
         send_kwargs = {}
         if msg.platform == "email":
             if msg.metadata:
-                # Prioritas: Metadata pesan masuk (agar reply threading jalan)
+                # Prioritas: Metadata pesan masuk
                 send_kwargs = {
                     "subject": msg.metadata.get("subject"),
                     "in_reply_to": msg.metadata.get("in_reply_to"),
@@ -134,13 +136,11 @@ class MessageOrchestrator:
         if answer_id:
             adapter.send_feedback_request(msg.platform_unique_id, answer_id)
             
-        # === SIMPAN METADATA (DENGAN SAFE GUARD) ===
+        # === SIMPAN METADATA ===
         if msg.platform == "email" and response.conversation_id and msg.metadata:
-            # Pastikan kita tidak menimpa metadata thread yang sudah ada dengan sesi baru
-            # kecuali thread tersebut memang belum punya sesi.
+            # Kunci thread_key ini ke session_id yang baru didapat
             current_thread_session = self.repo_msg.get_conversation_by_thread(msg.metadata.get("thread_key"))
             
-            # Hanya simpan jika thread ini belum punya sesi, atau sesinya sama.
             if not current_thread_session or current_thread_session == response.conversation_id:
                 self.repo_msg.save_email_metadata(
                     response.conversation_id,
@@ -149,5 +149,3 @@ class MessageOrchestrator:
                     msg.metadata.get("references", ""),
                     msg.metadata.get("thread_key", "")
                 )
-            else:
-                logger.warning(f"Ignored saving metadata for new Session {response.conversation_id} because Thread {msg.metadata.get('thread_key')} is already locked to Session {current_thread_session}")

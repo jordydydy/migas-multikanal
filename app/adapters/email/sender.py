@@ -62,7 +62,6 @@ class EmailAdapter(BaseAdapter):
         subject = kwargs.get("subject", "Re: Your Inquiry")
         in_reply_to = kwargs.get("in_reply_to")
         references = kwargs.get("references")
-        # [FIX] Ambil graph_message_id yang dikirim Orchestrator
         graph_message_id = kwargs.get("graph_message_id")
         
         text = self._convert_markdown_to_html(text)
@@ -79,11 +78,6 @@ class EmailAdapter(BaseAdapter):
             return self._send_via_smtp(recipient_id, subject, formatted_body, in_reply_to, references)
 
     def _send_via_graph(self, to_email: str, subject: str, html_body: str, graph_message_id: str = None):
-        """
-        Mengirim email via Graph API.
-        - Jika ada 'graph_message_id', gunakan endpoint '/reply' (Threading Native).
-        - Jika tidak ada, gunakan 'sendMail' (New Thread).
-        """
         token = self._get_graph_token()
         if not token:
             return {"sent": False, "error": "Could not acquire Azure token"}
@@ -95,31 +89,27 @@ class EmailAdapter(BaseAdapter):
         }
 
         # [LOGIKA 1: REPLY THREADING]
-        # Endpoint ini yang akan memaksa email masuk ke thread yang sama!
         if graph_message_id:
             logger.info(f"Replying to existing thread using Graph ID: {graph_message_id}")
             url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{graph_message_id}/reply"
-            payload = {
-                "comment": html_body  # Hanya perlu body baru
-            }
+            payload = {"comment": html_body}
             try:
                 response = requests.post(url, json=payload, headers=headers, timeout=10)
                 if response.status_code == 202:
                     return {"sent": True, "method": "azure_graph_reply"}
                 else:
-                    logger.warning(f"Graph Reply Failed ({response.status_code}). Fallback to sendMail.")
+                    logger.error(f"Graph Reply Failed ({response.status_code}): {response.text}")
+                    return {"sent": False, "error": f"Reply failed: {response.text}"}
             except Exception as e:
                 logger.error(f"Graph Reply Exception: {e}")
+                return {"sent": False, "error": str(e)}
 
-        # [LOGIKA 2: SEND NEW MAIL] (Fallback / Default)
+        # [LOGIKA 2: SEND NEW MAIL]
         url = f"https://graph.microsoft.com/v1.0/users/{user_id}/sendMail"
         email_msg = {
             "message": {
                 "subject": subject,
-                "body": {
-                    "contentType": "HTML",
-                    "content": html_body
-                },
+                "body": {"contentType": "HTML", "content": html_body},
                 "toRecipients": [{"emailAddress": {"address": to_email}}]
             },
             "saveToSentItems": "true"
@@ -138,7 +128,6 @@ class EmailAdapter(BaseAdapter):
             return {"sent": False, "error": str(e)}
 
     def _send_via_smtp(self, to_email, subject, html_body, in_reply_to, references):
-        # ... (Logika SMTP tetap sama) ...
         try:
             msg = MIMEMultipart()
             msg['From'] = settings.SMTP_USERNAME or settings.EMAIL_USER

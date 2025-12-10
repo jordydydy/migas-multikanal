@@ -15,9 +15,7 @@ logger = logging.getLogger("email.listener")
 repo = MessageRepository()
 
 _token_cache: Dict[str, Any] = {}
-
-# [FIX] Memory Cache untuk mencegah Race Condition (Double Processing)
-# Menyimpan ID pesan yang sedang diproses dalam runtime ini
+# Cache memori untuk mencegah race condition (double processing)
 _processing_cache: Set[str] = set()
 
 def get_graph_token() -> Optional[str]:
@@ -82,7 +80,7 @@ def process_single_email(sender_email, sender_name, subject, body, msg_id, refer
     try:
         api_url = f"http://127.0.0.1:9798/api/messages/process" 
         requests.post(api_url, json=payload, timeout=10)
-        logger.info(f"Email from {sender_email} processed. Thread: {thread_key}")
+        logger.info(f"Email processed: {sender_email} | Thread Key: {thread_key}")
     except Exception as req_err:
         logger.error(f"Failed to push email to API: {req_err}")
 
@@ -113,22 +111,19 @@ def _poll_graph_api():
             graph_id = msg.get("id")
             msg_id = msg.get("internetMessageId", "").strip()
             
-            # [FIX] Deduplikasi Level 1: Memory Check
-            if msg_id in _processing_cache:
-                logger.info(f"Skipping duplicate in-memory: {msg_id}")
+            # Skip jika ID kosong
+            if not msg_id:
+                _mark_graph_read(user_id, graph_id, token)
                 continue
 
-            # [FIX] Deduplikasi Level 2: Database Check
+            # Deduplikasi Memory & DB
+            if msg_id in _processing_cache: continue
             if repo.is_processed(msg_id, "email"):
                 _mark_graph_read(user_id, graph_id, token)
                 continue
             
-            # Masukkan ke cache memori agar tidak diproses ulang di loop ini
             _processing_cache.add(msg_id)
-
-            # Batasi ukuran cache agar RAM aman
-            if len(_processing_cache) > 1000:
-                _processing_cache.clear()
+            if len(_processing_cache) > 1000: _processing_cache.clear()
 
             subject = msg.get("subject", "")
             sender_info = msg.get("from", {}).get("emailAddress", {})
@@ -157,14 +152,29 @@ def _poll_graph_api():
                 elif h_name == "in-reply-to":
                     in_reply_to = h.get("value", "")
 
-            if references:
+            # [FIX CRITICAL] Thread Key Logic
+            # Gunakan conversationId dari Azure karena ini paling STABIL
+            azure_conv_id = msg.get("conversationId")
+            
+            if azure_conv_id:
+                thread_key = azure_conv_id
+            elif references:
                 thread_key = references.split()[0].strip()
             elif in_reply_to:
                 thread_key = in_reply_to.strip()
             else:
                 thread_key = msg_id
 
-            process_single_email(sender_email, sender_name, subject, clean_body, msg_id, references, thread_key, graph_id)
+            process_single_email(
+                sender_email, 
+                sender_name, 
+                subject, 
+                clean_body, 
+                msg_id, 
+                references, 
+                thread_key, # Ini yang akan menjaga konsistensi sesi
+                graph_id
+            )
             
             _mark_graph_read(user_id, graph_id, token)
 
@@ -201,9 +211,8 @@ def _poll_imap():
             
             msg_id = msg.get("Message-ID", "").strip()
             
-            # Deduplikasi Memory & DB
-            if msg_id in _processing_cache: continue
-            if repo.is_processed(msg_id, "email"): continue
+            if not msg_id or msg_id in _processing_cache or repo.is_processed(msg_id, "email"):
+                continue
             
             _processing_cache.add(msg_id)
             if len(_processing_cache) > 1000: _processing_cache.clear()
@@ -236,6 +245,7 @@ def _poll_imap():
             else:
                 thread_key = msg_id
 
+            # IMAP tidak punya graph_message_id
             process_single_email(sender_email, sender_name, subject, clean_body, msg_id, references, thread_key, None)
 
         mail.close()

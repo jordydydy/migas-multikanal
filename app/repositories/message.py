@@ -17,7 +17,6 @@ class MessageRepository:
                             PRIMARY KEY (message_id, platform)
                         );
                     """)
-                    
                     cursor.execute(
                         """
                         INSERT INTO bkpm.processed_messages (message_id, platform)
@@ -26,30 +25,19 @@ class MessageRepository:
                         """,
                         (message_id, platform)
                     )
-                    
                     is_new = cursor.rowcount > 0
                     conn.commit()
                     return not is_new 
-
         except Exception as e:
             logger.error(f"Deduplication check failed for {message_id}: {e}")
-            return False 
+            return True 
 
-    # [FIX] Fungsi Baru: Mencari Sesi berdasarkan Thread Key
     def get_conversation_by_thread(self, thread_key: str) -> Optional[str]:
         if not thread_key: return None
         try:
             with Database.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        SELECT conversation_id 
-                        FROM bkpm.email_metadata 
-                        WHERE thread_key = %s 
-                        LIMIT 1
-                        """,
-                        (thread_key,)
-                    )
+                    cursor.execute("SELECT conversation_id FROM bkpm.email_metadata WHERE thread_key = %s LIMIT 1", (thread_key,))
                     row = cursor.fetchone()
                     return str(row[0]) if row else None
         except Exception as e:
@@ -81,23 +69,10 @@ class MessageRepository:
         try:
             with Database.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        SELECT subject, in_reply_to, "references", thread_key
-                        FROM bkpm.email_metadata
-                        WHERE conversation_id = %s
-                        LIMIT 1
-                        """,
-                        (conversation_id,)
-                    )
+                    cursor.execute("SELECT subject, in_reply_to, \"references\", thread_key FROM bkpm.email_metadata WHERE conversation_id = %s LIMIT 1", (conversation_id,))
                     row = cursor.fetchone()
                     if row:
-                        return {
-                            "subject": row[0],
-                            "in_reply_to": row[1],
-                            "references": row[2],
-                            "thread_key": row[3]
-                        }
+                        return {"subject": row[0], "in_reply_to": row[1], "references": row[2], "thread_key": row[3]}
             return None
         except Exception as e:
             logger.error(f"Failed to get email metadata: {e}")
@@ -107,16 +82,7 @@ class MessageRepository:
         try:
             with Database.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        SELECT id
-                        FROM bkpm.chat_history
-                        WHERE session_id = %s
-                        ORDER BY created_at DESC
-                        LIMIT 1
-                        """,
-                        (conversation_id,)
-                    )
+                    cursor.execute("SELECT id FROM bkpm.chat_history WHERE session_id = %s ORDER BY created_at DESC LIMIT 1", (conversation_id,))
                     row = cursor.fetchone()
                     return int(row[0]) if row else None
         except Exception as e:
