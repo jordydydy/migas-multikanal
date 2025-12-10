@@ -6,14 +6,9 @@ logger = logging.getLogger("repo.message")
 
 class MessageRepository:
     def is_processed(self, message_id: str, platform: str) -> bool:
-        """
-        Mengecek apakah pesan sudah pernah diproses sebelumnya (Deduplikasi).
-        Returns: True jika SUDAH diproses (skip), False jika BELUM (proses).
-        """
         try:
             with Database.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    # Pastikan tabel ada
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS bkpm.processed_messages (
                             message_id TEXT NOT NULL,
@@ -23,7 +18,6 @@ class MessageRepository:
                         );
                     """)
                     
-                    # Coba insert. Jika konflik (sudah ada), return True (is processed)
                     cursor.execute(
                         """
                         INSERT INTO bkpm.processed_messages (message_id, platform)
@@ -33,17 +27,36 @@ class MessageRepository:
                         (message_id, platform)
                     )
                     
-                    # Jika rowcount > 0, berarti insert sukses (pesan baru -> belum diproses)
                     is_new = cursor.rowcount > 0
                     conn.commit()
-                    return not is_new  # Return True jika SUDAH ada
+                    return not is_new 
 
         except Exception as e:
             logger.error(f"Deduplication check failed for {message_id}: {e}")
-            return False  # Fail-open: kalau DB error, anggap pesan baru agar tetap diproses
+            return False 
+
+    # [FIX] Fungsi Baru: Mencari Sesi berdasarkan Thread Key
+    def get_conversation_by_thread(self, thread_key: str) -> Optional[str]:
+        if not thread_key: return None
+        try:
+            with Database.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT conversation_id 
+                        FROM bkpm.email_metadata 
+                        WHERE thread_key = %s 
+                        LIMIT 1
+                        """,
+                        (thread_key,)
+                    )
+                    row = cursor.fetchone()
+                    return str(row[0]) if row else None
+        except Exception as e:
+            logger.error(f"Failed to get conversation by thread: {e}")
+            return None
 
     def save_email_metadata(self, conversation_id: str, subject: str, in_reply_to: str, references: str, thread_key: str):
-        """Menyimpan metadata email agar reply bot masuk ke thread yang benar."""
         try:
             with Database.get_connection() as conn:
                 with conn.cursor() as cursor:
@@ -51,7 +64,12 @@ class MessageRepository:
                         """
                         INSERT INTO bkpm.email_metadata (conversation_id, subject, in_reply_to, "references", thread_key)
                         VALUES (%s, %s, %s, %s, %s)
-                        ON CONFLICT (conversation_id) DO NOTHING
+                        ON CONFLICT (conversation_id) 
+                        DO UPDATE SET
+                            subject = EXCLUDED.subject,
+                            in_reply_to = EXCLUDED.in_reply_to,
+                            "references" = EXCLUDED."references",
+                            thread_key = EXCLUDED.thread_key
                         """,
                         (conversation_id, subject, in_reply_to, references, thread_key)
                     )
@@ -86,7 +104,6 @@ class MessageRepository:
             return None
 
     def get_latest_answer_id(self, conversation_id: str) -> Optional[int]:
-        """Mengambil ID jawaban terakhir chatbot untuk keperluan feedback."""
         try:
             with Database.get_connection() as conn:
                 with conn.cursor() as cursor:

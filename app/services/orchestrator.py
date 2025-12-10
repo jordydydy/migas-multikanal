@@ -25,32 +25,19 @@ class MessageOrchestrator:
         self.adapters = adapters
 
     async def handle_feedback(self, msg: IncomingMessage):
-        """
-        Mengirim feedback user (Good/Bad) ke Backend.
-        """
         payload_str = msg.metadata.get("payload", "")
-        
-        # Validasi format payload (contoh: good-123)
-        if "-" not in payload_str:
-            logger.warning(f"Invalid feedback payload format: {payload_str}")
-            return
+        if "-" not in payload_str: return
 
         try:
             feedback_type_raw, answer_id_raw = payload_str.split("-", 1)
         except ValueError:
-            logger.warning(f"Gagal parsing payload feedback: {payload_str}")
             return
 
         is_good = "good" in feedback_type_raw.lower()
-        
-        # Cari Session ID (Conversation ID)
         session_id = msg.conversation_id or self.repo_conv.get_latest_id(msg.platform_unique_id, msg.platform)
         
-        if not session_id:
-            logger.warning(f"Gagal kirim feedback: Tidak ada session ID untuk user {msg.platform_unique_id}")
-            return
+        if not session_id: return
 
-        # Payload ke Backend Feedback API
         backend_payload = {
             "session_id": session_id,
             "feedback": is_good,
@@ -66,75 +53,105 @@ class MessageOrchestrator:
 
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(url, json=backend_payload, headers=headers)
-            
-            if resp.status_code == 200:
-                logger.info("✅ Feedback berhasil dikirim ke Backend.")
-            else:
-                logger.error(f"❌ Feedback API Error {resp.status_code}: {resp.text}")
-                
+                await client.post(url, json=backend_payload, headers=headers)
         except Exception as e:
-            logger.error(f"❌ Gagal mengirim feedback: {e}")
+            logger.error(f"Gagal kirim feedback: {e}")
+
+    async def send_manual_message(self, data: dict):
+        payload = data.get("data") if "data" in data else data
+        user_id = payload.get("user") or payload.get("platform_unique_id") or payload.get("recipient_id")
+        platform = payload.get("platform")
+        answer = payload.get("answer") or payload.get("message")
+        conversation_id = payload.get("conversation_id")
+        answer_id = payload.get("answer_id")
+
+        if not user_id or not answer or not platform: return
+
+        adapter = self.adapters.get(platform)
+        if not adapter: return
+
+        send_kwargs = {}
+        if platform == "email":
+            meta = self.repo_msg.get_email_metadata(conversation_id) if conversation_id else None
+            if meta:
+                send_kwargs = meta
+            else:
+                send_kwargs = {"subject": "Re: Your Inquiry"}
+
+        logger.info(f"Sending manual reply to {platform} user {user_id}")
+        adapter.send_message(user_id, answer, **send_kwargs)
+
+        if answer_id:
+            adapter.send_feedback_request(user_id, answer_id)
 
     async def process_message(self, msg: IncomingMessage):
         """Alur utama pemrosesan pesan chat."""
-        
-        # 1. Pilih Adapter
         adapter = self.adapters.get(msg.platform)
-        if not adapter:
-            logger.warning(f"No adapter found for platform: {msg.platform}")
-            return
+        if not adapter: return
 
-        # 2. Typing On
         try:
             adapter.send_typing_on(msg.platform_unique_id)
         except Exception:
             pass
 
-        # 3. Resolve ID
         if not msg.conversation_id:
-            msg.conversation_id = self.repo_conv.get_active_id(msg.platform_unique_id, msg.platform)
+            # KHUSUS EMAIL: Cek Thread Key dulu
+            if msg.platform == "email" and msg.metadata and msg.metadata.get("thread_key"):
+                thread_key = msg.metadata.get("thread_key")
+                # Cari apakah thread ini sudah punya session ID
+                existing_id = self.repo_msg.get_conversation_by_thread(thread_key)
+                if existing_id:
+                    msg.conversation_id = existing_id
+                    logger.info(f"Email Thread '{thread_key}' continued session: {existing_id}")
+            
+            # Jika bukan email, atau email thread baru (belum ada di DB), cek active user session
+            # TAPI, untuk email thread baru, kita JANGAN pakai active session lama user.
+            if not msg.conversation_id:
+                if msg.platform != "email":
+                    msg.conversation_id = self.repo_conv.get_active_id(msg.platform_unique_id, msg.platform)
+                else:
+                    # Email thread baru -> Biarkan kosong (None). 
+                    # Backend akan membuat Session ID baru.
+                    logger.info(f"New Email Thread detected. Starting new session.")
 
-        # 4. Kirim ke Chatbot
+        # Kirim ke Chatbot
         try:
-            # Panggil Chatbot (Direct Response)
             response = await self.chatbot.ask(msg.query, msg.conversation_id, msg.platform, msg.platform_unique_id)
         except Exception as e:
             logger.error(f"Critical error during chatbot processing: {e}")
             response = None
 
-        # 5. Typing Off
         try:
             adapter.send_typing_off(msg.platform_unique_id)
         except Exception:
             pass
 
-        if not response or not response.answer:
-            return 
+        if not response or not response.answer: return 
 
-        # 6. Kirim Balasan ke User
+        # Kirim Balasan
         send_kwargs = {}
         if msg.platform == "email":
-            meta = self.repo_msg.get_email_metadata(response.conversation_id or msg.conversation_id)
-            if meta:
-                send_kwargs = meta
-            elif msg.metadata:
+            # Prioritaskan metadata dari pesan masuk (reply ke thread yang sama)
+            if msg.metadata:
                 send_kwargs = {
                     "subject": msg.metadata.get("subject"),
                     "in_reply_to": msg.metadata.get("in_reply_to"),
                     "references": msg.metadata.get("references")
                 }
+            else:
+                meta = self.repo_msg.get_email_metadata(response.conversation_id or msg.conversation_id)
+                if meta:
+                    send_kwargs = meta
 
         adapter.send_message(msg.platform_unique_id, response.answer, **send_kwargs)
 
-        # 7. Kirim Tombol Feedback (Jika ada answer_id)
         raw_data = response.raw.get("data", {}) if response.raw else {}
         answer_id = raw_data.get("answer_id")
         
         if answer_id:
             adapter.send_feedback_request(msg.platform_unique_id, answer_id)
             
-        # 8. Simpan Metadata Email (Jika perlu)
+        # Simpan Metadata Email (Mapping Thread Key -> Conversation ID Baru)
         if msg.platform == "email" and response.conversation_id and msg.metadata:
             self.repo_msg.save_email_metadata(
                 response.conversation_id,

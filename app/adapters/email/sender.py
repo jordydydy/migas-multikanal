@@ -1,37 +1,134 @@
 import smtplib
 import requests
 import logging
+import time
+import re
+import msal
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import make_msgid
+from typing import Optional, Dict, Any
+
 from app.core.config import settings
 from app.adapters.base import BaseAdapter
 
 logger = logging.getLogger("adapters.email")
 
 class EmailAdapter(BaseAdapter):
+    _token_cache: Dict[str, Any] = {}
+
     def send_typing_on(self, recipient_id: str):
-        pass # Email tidak punya typing indicator
+        pass 
 
     def send_typing_off(self, recipient_id: str):
         pass
 
+    def _convert_markdown_to_html(self, text: str) -> str:
+        text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+        text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+        text = re.sub(r'_(.*?)_', r'<i>\1</i>', text)
+        return text
+
+    def _get_graph_token(self) -> Optional[str]:
+        if self._token_cache and self._token_cache.get("expires_at", 0) > time.time() + 60:
+            return self._token_cache.get("access_token")
+
+        if not all([settings.AZURE_CLIENT_ID, settings.AZURE_CLIENT_SECRET, settings.AZURE_TENANT_ID]):
+            logger.error("Azure credentials not fully configured.")
+            return None
+
+        try:
+            app = msal.ConfidentialClientApplication(
+                settings.AZURE_CLIENT_ID,
+                authority=f"https://login.microsoftonline.com/{settings.AZURE_TENANT_ID}",
+                client_credential=settings.AZURE_CLIENT_SECRET,
+            )
+            
+            result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+            
+            if "access_token" in result:
+                self._token_cache = {
+                    "access_token": result["access_token"],
+                    "expires_at": time.time() + result.get("expires_in", 3500)
+                }
+                logger.info("New Azure OAuth2 token acquired.")
+                return result["access_token"]
+            else:
+                logger.error(f"Failed to acquire Graph token: {result.get('error_description')}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Azure Auth Exception: {e}")
+            return None
+
     def send_message(self, recipient_id: str, text: str, **kwargs):
         subject = kwargs.get("subject", "Re: Your Inquiry")
+        # Kita tidak bisa menggunakan in_reply_to di Graph API sendMail,
+        # jadi variabel ini tidak kita pakai untuk Azure.
         in_reply_to = kwargs.get("in_reply_to")
         references = kwargs.get("references")
         
-        # Format Body
+        text = self._convert_markdown_to_html(text)
         html_body = text.replace('\n', '<br>')
+        
         formatted_body = (
             f"Dear Bapak/Ibu,<br><br>{html_body}<br><br>"
             "Regards,<br>Kementerian Investasi dan Hilirisasi/BKPM"
         )
 
         if settings.EMAIL_PROVIDER == "azure_oauth2":
-            return self._send_via_graph(recipient_id, subject, formatted_body, in_reply_to)
+            return self._send_via_graph(recipient_id, subject, formatted_body)
         else:
             return self._send_via_smtp(recipient_id, subject, formatted_body, in_reply_to, references)
+
+    def _send_via_graph(self, to_email: str, subject: str, html_body: str):
+        """
+        Mengirim email menggunakan Microsoft Graph API.
+        [FIX] Menghapus 'internetMessageHeaders' karena Graph API menolak
+        setting manual In-Reply-To pada endpoint sendMail.
+        """
+        token = self._get_graph_token()
+        if not token:
+            return {"sent": False, "error": "Could not acquire Azure token"}
+
+        user_id = settings.AZURE_EMAIL_USER
+        url = f"https://graph.microsoft.com/v1.0/users/{user_id}/sendMail"
+        
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        # Payload Bersih (Tanpa Header Konflik)
+        email_msg = {
+            "message": {
+                "subject": subject,
+                "body": {
+                    "contentType": "HTML",
+                    "content": html_body
+                },
+                "toRecipients": [
+                    {
+                        "emailAddress": {"address": to_email}
+                    }
+                ]
+            },
+            "saveToSentItems": "true"
+        }
+
+        try:
+            response = requests.post(url, json=email_msg, headers=headers, timeout=10)
+            
+            if response.status_code == 202:
+                logger.info(f"Email sent via Azure Graph API to {to_email}")
+                return {"sent": True, "method": "azure_graph"}
+            else:
+                logger.error(f"Graph API Error {response.status_code}: {response.text}")
+                return {"sent": False, "error": response.text}
+                
+        except Exception as e:
+            logger.error(f"Graph API Exception: {e}")
+            return {"sent": False, "error": str(e)}
 
     def _send_via_smtp(self, to_email, subject, html_body, in_reply_to, references):
         try:
@@ -55,10 +152,3 @@ class EmailAdapter(BaseAdapter):
         except Exception as e:
             logger.error(f"SMTP Error: {e}")
             return {"sent": False, "error": str(e)}
-
-    def _send_via_graph(self, to_email, subject, html_body, in_reply_to):
-        # Implementasi Graph API Sender (disederhanakan)
-        # Anda perlu memanggil 'get_oauth_token' dari utils jika ingin implementasi penuh
-        # Untuk mempersingkat, saya beri kerangka logikanya:
-        logger.warning("Graph API sending not fully implemented in this refactor snippet yet.")
-        return {"sent": False, "error": "Graph API logic pending token implementation"}
