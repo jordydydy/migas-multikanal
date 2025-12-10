@@ -15,7 +15,6 @@ logger = logging.getLogger("email.listener")
 repo = MessageRepository()
 
 _token_cache: Dict[str, Any] = {}
-# [HAPUS] _processing_cache dihilangkan agar stateless dan aman untuk multi-worker
 
 def get_graph_token() -> Optional[str]:
     global _token_cache
@@ -114,9 +113,6 @@ def _poll_graph_api():
                 _mark_graph_read(user_id, graph_id, token)
                 continue
 
-            # [FIX] Deduplikasi Langsung ke Database
-            # Kita tidak pakai cache memory. Kita tanya langsung ke DB.
-            # DB akan menjamin hanya 1 proses yang bisa lolos.
             if repo.is_processed(msg_id, "email"):
                 _mark_graph_read(user_id, graph_id, token)
                 continue
