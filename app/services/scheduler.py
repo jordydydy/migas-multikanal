@@ -30,4 +30,4 @@ async def run_scheduler():
         except Exception as e:
             logger.error(f"Scheduler Error: {e}")
         
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)

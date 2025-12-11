@@ -52,6 +52,10 @@ class ConversationRepository:
             return None
 
     def get_stale_sessions(self, minutes: int = 15) -> List[Tuple[str, str, str]]:
+        """
+        Mengambil sesi yang sudah tidak aktif selama X menit.
+        Logic: Cek max(created_at) di history. Jika kosong, pakai start_timestamp sesi.
+        """
         try:
             with Database.get_connection() as conn:
                 with conn.cursor() as cursor:
@@ -61,12 +65,10 @@ class ConversationRepository:
                         FROM bkpm.conversations c
                         WHERE c.end_timestamp IS NULL 
                         AND c.platform IN ('whatsapp', 'instagram')
-                        -- [FIX] Hanya cek sesi yang dibuat HARI INI (untuk hindari data kotor lama)
                         AND c.start_timestamp >= CURRENT_DATE
-                        AND (
-                            SELECT MAX(ch.created_at) 
-                            FROM bkpm.chat_history ch 
-                            WHERE ch.session_id = c.id
+                        AND COALESCE(
+                            (SELECT MAX(created_at) FROM bkpm.chat_history WHERE session_id = c.id),
+                            c.start_timestamp
                         ) < NOW() - INTERVAL '{minutes} minutes'
                         LIMIT 50
                         """
@@ -76,3 +78,20 @@ class ConversationRepository:
         except Exception as e:
             logger.error(f"Error fetching stale sessions: {e}")
             return []
+
+    def close_session(self, conversation_id: str):
+        try:
+            with Database.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE bkpm.conversations
+                        SET end_timestamp = NOW()
+                        WHERE id = %s
+                        """,
+                        (conversation_id,)
+                    )
+                    conn.commit()
+                    logger.info(f"Session {conversation_id} closed successfully.")
+        except Exception as e:
+            logger.error(f"Error closing session {conversation_id}: {e}")
