@@ -37,9 +37,7 @@ class MessageOrchestrator:
 
         closing_text = (
             "Untuk keamanan dan kenyamanan Anda, sesi ini telah diakhiri. "
-            "Silakan mulai percakapan kembali dari awal jika membutuhkan bantuan.\n\n"
-            "_For your safety and convenience, I've ended this session. "
-            "Feel free to start a new chat whenever you're ready._"
+            "Silakan mulai percakapan kembali dari awal jika membutuhkan bantuan."
         )
         
         send_kwargs = {}
@@ -86,6 +84,8 @@ class MessageOrchestrator:
         conversation_id = payload.get("conversation_id")
         answer_id = payload.get("answer_id")
         
+        is_helpdesk = payload.get("is_helpdesk", False)
+        
         if not user_id or not answer or not platform: 
             logger.warning(f"Invalid callback payload: {payload}")
             return
@@ -109,7 +109,9 @@ class MessageOrchestrator:
         await adapter.send_message(user_id, answer, **send_kwargs)
         try: await adapter.send_typing_off(user_id)
         except: pass
-        if answer_id: await adapter.send_feedback_request(user_id, answer_id)
+        
+        if answer_id and not is_helpdesk: 
+            await adapter.send_feedback_request(user_id, answer_id)
 
     async def process_message(self, msg: IncomingMessage):
         adapter = self.adapters.get(msg.platform)

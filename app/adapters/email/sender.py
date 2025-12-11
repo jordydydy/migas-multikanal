@@ -68,8 +68,8 @@ class EmailAdapter(BaseAdapter):
         html_body = text.replace('\n', '<br>')
         
         formatted_body = (
-            f"Dear Bapak/Ibu,<br><br>{html_body}<br><br>"
-            "Regards,<br>Kementerian Investasi dan Hilirisasi/BKPM"
+            f"Yth. Bapak/Ibu,<br><br>{html_body}<br><br>"
+            "Dengan Hormat,<br>Kementerian Investasi dan Hilirisasi/BKPM"
         )
 
         if settings.EMAIL_PROVIDER == "azure_oauth2":

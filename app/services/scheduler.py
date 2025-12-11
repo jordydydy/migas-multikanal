@@ -13,16 +13,14 @@ async def run_scheduler():
     while True:
         try:
             orchestrator = get_orchestrator()
-            
             stale_sessions = repo_conv.get_stale_sessions(minutes=5)
-            
+    
             if stale_sessions:
                 logger.info(f"🔍 Found {len(stale_sessions)} stale sessions. Closing them...")
 
             for session in stale_sessions:
                 conv_id, platform, user_id = session
                 
-                # Tutup sesi
                 await orchestrator.timeout_session(conv_id, platform, user_id)
                 
                 await asyncio.sleep(1)
