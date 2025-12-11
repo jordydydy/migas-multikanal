@@ -8,9 +8,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Multikarnal Orchestrator"
     LOG_LEVEL: str = "INFO"
     
-    # [BARU] URL aplikasi ini sendiri (Orchestrator) untuk internal loopback listener
-    # Default ke localhost:9798 sesuai setup Anda
-    SELF_API_URL: str = "http://localhost:9798"
+    SELF_API_URL: str
     
     ENABLE_BACKGROUND_WORKER: bool = True 
 
@@ -19,7 +17,7 @@ class Settings(BaseSettings):
     CHATBOT_API_KEY: Optional[str] = None
     CHATBOT_TIMEOUT_SECONDS: int = 30
     
-    CORE_API_BASE_URL: str = "http://localhost:8000"
+    CORE_API_BASE_URL: str
     CORE_API_KEY: Optional[str] = None
     
     # Feature Flags
@@ -29,7 +27,7 @@ class Settings(BaseSettings):
 
     # Database
     DB_HOST: str
-    DB_PORT: int = 5432
+    DB_PORT: int
     DB_NAME: str
     DB_USER: str
     DB_PASS: str
@@ -45,7 +43,7 @@ class Settings(BaseSettings):
 
     # Email Settings
     EMAIL_PROVIDER: Literal["gmail", "azure_oauth2", "unknown"] = "unknown"
-    EMAIL_HOST: str = "imap.gmail.com"
+    EMAIL_HOST: str
     EMAIL_PORT: int = 993
     EMAIL_USER: Optional[str] = None
     EMAIL_PASS: Optional[str] = None
