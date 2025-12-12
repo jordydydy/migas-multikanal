@@ -6,7 +6,7 @@ from app.repositories.conversation import ConversationRepository
 logger = logging.getLogger("service.scheduler")
 
 async def run_scheduler():
-    logger.info("⏳ Session Timeout Scheduler Started...")
+    logger.info("Session Timeout Scheduler Started...")
     repo_conv = ConversationRepository()    
     await asyncio.sleep(5)
 
@@ -16,7 +16,7 @@ async def run_scheduler():
             stale_sessions = repo_conv.get_stale_sessions(minutes=5)
     
             if stale_sessions:
-                logger.info(f"🔍 Found {len(stale_sessions)} stale sessions. Closing them...")
+                logger.info(f"🔍 Found {len(stale_sessions)} stale sessions.")
 
             for session in stale_sessions:
                 conv_id, platform, user_id = session

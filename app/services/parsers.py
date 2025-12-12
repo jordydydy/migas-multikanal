@@ -54,7 +54,7 @@ def parse_instagram_payload(data: Dict[str, Any]) -> Optional[IncomingMessage]:
             return None
 
         message = messaging.get("message", {})
-        msg_id = message.get("mid") # [BARU] Ambil Message ID IG
+        msg_id = message.get("mid") 
         
         if "quick_reply" in message:
             payload = message["quick_reply"].get("payload")

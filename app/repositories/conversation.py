@@ -52,10 +52,6 @@ class ConversationRepository:
             return None
 
     def get_stale_sessions(self, minutes: int = 15) -> List[Tuple[str, str, str]]:
-        """
-        Mengambil sesi yang sudah tidak aktif selama X menit.
-        Logic: Cek max(created_at) di history. Jika kosong, pakai start_timestamp sesi.
-        """
         try:
             with Database.get_connection() as conn:
                 with conn.cursor() as cursor:
@@ -71,7 +67,6 @@ class ConversationRepository:
                             c.start_timestamp
                         ) < NOW() - INTERVAL '{minutes} minutes'
                         LIMIT 50
-                        FOR UPDATE SKIP LOCKED
                         """
                     )
                     rows = cursor.fetchall()
