@@ -128,34 +128,8 @@ class MessageOrchestrator:
             await adapter.send_feedback_request(user_id, answer_id)
 
     def _ensure_conversation_id(self, msg: IncomingMessage):
-        if msg.platform == "email" and msg.metadata:
-            
-            if settings.EMAIL_PROVIDER == "azure_oauth2":
-                azure_conv_id = msg.metadata.get("conversation_id")
-                
-                if azure_conv_id:
-                    existing_id = self.repo_msg.get_conversation_by_azure_thread(azure_conv_id)
-                    
-                    if existing_id:
-                        msg.conversation_id = existing_id
-                    else:
-                        msg.conversation_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, azure_conv_id))
-                    
-                    return 
-
-            thread_key = msg.metadata.get("thread_key")
-            if thread_key:
-                existing_id = self.repo_msg.get_conversation_by_thread(thread_key)
-                if existing_id:
-                    msg.conversation_id = existing_id
-                    return
-
-            sender = msg.platform_unique_id.lower()
-            subject = msg.metadata.get("subject", "").lower().strip()
-            clean_subject = re.sub(r'^(re:|fwd:|balas:|tr:|aw:)\s*', '', subject, flags=re.IGNORECASE).strip()
-            
-            seed = f"{sender}|{clean_subject}"
-            msg.conversation_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, seed))
+        if msg.platform == "email":
+            self._handle_email_conversation_id(msg)
             return
 
         if not msg.conversation_id:
@@ -163,6 +137,44 @@ class MessageOrchestrator:
 
         if not msg.conversation_id:
             msg.conversation_id = str(uuid.uuid4())
+
+    def _handle_email_conversation_id(self, msg: IncomingMessage):
+        if not msg.metadata:
+            msg.conversation_id = str(uuid.uuid4())
+            return
+
+        if settings.EMAIL_PROVIDER == "azure_oauth2":
+            self._handle_azure_email_thread(msg)
+        else:
+            self._handle_standard_email_thread(msg)
+
+    def _handle_azure_email_thread(self, msg: IncomingMessage):
+        azure_conv_id = msg.metadata.get("conversation_id")
+        
+        if azure_conv_id:
+            existing_id = self.repo_msg.get_conversation_by_azure_thread(azure_conv_id)
+            
+            if existing_id:
+                msg.conversation_id = existing_id
+            else:
+                msg.conversation_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, azure_conv_id))
+        else:
+            msg.conversation_id = str(uuid.uuid4())
+
+    def _handle_standard_email_thread(self, msg: IncomingMessage):
+        thread_key = msg.metadata.get("thread_key")
+        if thread_key:
+            existing_id = self.repo_msg.get_conversation_by_thread(thread_key)
+            if existing_id:
+                msg.conversation_id = existing_id
+                return
+
+        sender = msg.platform_unique_id.lower()
+        subject = msg.metadata.get("subject", "").lower().strip()
+        clean_subject = re.sub(r'^(re:|fwd:|balas:|tr:|aw:)\s*', '', subject, flags=re.IGNORECASE).strip()
+        
+        seed = f"{sender}|{clean_subject}"
+        msg.conversation_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, seed))
 
     async def process_message(self, msg: IncomingMessage):
         adapter = self.adapters.get(msg.platform)

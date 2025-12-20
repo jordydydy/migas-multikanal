@@ -114,10 +114,11 @@ def _poll_graph_api():
 
 def start_email_listener():
     if not settings.EMAIL_USER and not settings.AZURE_CLIENT_ID: return
-    logger.info(f"Starting Email Listener...")
+    logger.info("Starting Email Listener")
     while True:
         try:
-            if settings.EMAIL_PROVIDER == "azure_oauth2": _poll_graph_api()
-            else: pass 
-        except Exception: pass
+            if settings.EMAIL_PROVIDER == "azure_oauth2":
+                _poll_graph_api()
+        except Exception: 
+            pass
         time.sleep(settings.EMAIL_POLL_INTERVAL_SECONDS)
