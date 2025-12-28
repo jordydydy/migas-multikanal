@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Multikarnal Orchestrator"
     LOG_LEVEL: str = "INFO"
     ENABLE_BACKGROUND_WORKER: bool = True 
+    X_API_KEY: Optional[str] = None 
 
     # Backend API Configuration
     BACKEND_API_BASE_URL: str

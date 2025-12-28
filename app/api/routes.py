@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, BackgroundTasks, Request, Query, Respons
 from app.core.config import settings
 from app.schemas.models import IncomingMessage
 from app.api.dependencies import get_orchestrator
+from app.api.auth import verify_api_key
 from app.services.orchestrator import MessageOrchestrator
 from app.services.parsers import parse_whatsapp_payload, parse_instagram_payload
 from app.repositories.message import MessageRepository
@@ -68,7 +69,7 @@ async def instagram_webhook(
             
     return {"status": "ok"}
 
-@router.post("/api/send/reply")
+@router.post("/api/send/reply", dependencies=[Depends(verify_api_key)])
 async def receive_backend_reply(
     request: Request,
     bg_tasks: BackgroundTasks,
@@ -81,7 +82,7 @@ async def receive_backend_reply(
     
     return {"status": "processed"}
 
-@router.post("/api/messages/process")
+@router.post("/api/messages/process", dependencies=[Depends(verify_api_key)])
 async def process_message_internal(
     msg: IncomingMessage,
     bg_tasks: BackgroundTasks,
