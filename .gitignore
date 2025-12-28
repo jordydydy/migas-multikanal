@@ -1,6 +1,7 @@
 .env
 .sonar/
 venv/
+test/
 app/__pycache__/
 app/adapters/__pycache__/
 app/api/__pycache__/
