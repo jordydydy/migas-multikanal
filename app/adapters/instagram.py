@@ -1,7 +1,10 @@
 import re
+import logging
 from app.core.config import settings
 from app.adapters.base import BaseAdapter
 from app.adapters.utils import split_text_smartly, make_meta_request
+
+logger = logging.getLogger("adapters.instagram")
 
 class InstagramAdapter(BaseAdapter):
     def __init__(self):
@@ -15,12 +18,12 @@ class InstagramAdapter(BaseAdapter):
     async def send_typing_on(self, recipient_id: str, message_id: str = None):
         if not self.token: return
         payload = {"recipient": {"id": self._clean_id(recipient_id)}, "sender_action": "typing_on"}
-        await make_meta_request("POST", self.base_url, self.token, payload)
+        result = await make_meta_request("POST", self.base_url, self.token, payload)
 
     async def send_typing_off(self, recipient_id: str):
         if not self.token: return
         payload = {"recipient": {"id": self._clean_id(recipient_id)}, "sender_action": "typing_off"}
-        await make_meta_request("POST", self.base_url, self.token, payload)
+        result = await make_meta_request("POST", self.base_url, self.token, payload)
 
     async def send_message(self, recipient_id: str, text: str, **kwargs):
         if not self.token: return {"success": False}
@@ -37,9 +40,17 @@ class InstagramAdapter(BaseAdapter):
             res = await make_meta_request("POST", self.base_url, self.token, payload)
             results.append(res)
             
+            status = res.get("status_code")
+            if status == 200:
+                logger.info(f"[Instagram API] Message sent: 200 OK")
+            else:
+                logger.error(f"[Instagram API] Message failed: {status} - {res.get('data')}")
+            
         return {"sent": True, "results": results}
 
     async def send_feedback_request(self, recipient_id: str, answer_id: int):
+        if not self.token: return {"success": False}
+        
         payload = {
             "recipient": {"id": self._clean_id(recipient_id)},
             "message": {
@@ -50,4 +61,12 @@ class InstagramAdapter(BaseAdapter):
                 ]
             }
         }
-        return await make_meta_request("POST", self.base_url, self.token, payload)
+        result = await make_meta_request("POST", self.base_url, self.token, payload)
+        
+        status = result.get("status_code")
+        if status == 200:
+            logger.info(f"[Instagram API] Feedback request sent: 200 OK")
+        else:
+            logger.error(f"[Instagram API] Feedback request failed: {status} - {result.get('data')}")
+        
+        return result
