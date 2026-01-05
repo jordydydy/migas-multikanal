@@ -200,7 +200,7 @@ class MessageOrchestrator:
         )
         
         if not success:
-            logger.error(f"Gagal push ke backend AI for conversation {msg.conversation_id}")
+            logger.error(f"Failed to push backend AI for conversation {msg.conversation_id}")
             try: await adapter.send_typing_off(msg.platform_unique_id)
             except Exception: pass
 
