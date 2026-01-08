@@ -1,4 +1,3 @@
-import asyncio
 import httpx
 import uuid
 import re
@@ -124,7 +123,9 @@ class MessageOrchestrator:
         except Exception: 
             pass
         
-        if answer_id and not is_helpdesk: 
+        is_busy_message = "Mohon maaf, saat ini sistem sedang sibuk. Silakan coba kembali beberapa saat lagi." in answer
+        
+        if answer_id and not is_helpdesk and not is_busy_message: 
             await adapter.send_feedback_request(user_id, answer_id)
 
     def _ensure_conversation_id(self, msg: IncomingMessage):
