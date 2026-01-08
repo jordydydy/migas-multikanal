@@ -123,7 +123,7 @@ class MessageOrchestrator:
         except Exception: 
             pass
         
-        is_busy_message = "Mohon maaf, saat ini sistem sedang sibuk. Silakan coba kembali beberapa saat lagi." in answer
+        is_busy_message = "Mohon maaf, saat ini terdapat peningkatan jumlah pesan yang masuk. Silakan kirim ulang pesan Anda beberapa saat lagi. Terimakasih." in answer
         
         if answer_id and not is_helpdesk and not is_busy_message: 
             await adapter.send_feedback_request(user_id, answer_id)

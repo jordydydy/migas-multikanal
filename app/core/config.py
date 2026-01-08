@@ -9,10 +9,11 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     ENABLE_BACKGROUND_WORKER: bool = True 
     X_API_KEY: Optional[str] = None 
+    BACKEND_CONCURRENCY_LIMIT: int
 
     # Backend API Configuration
     BACKEND_API_BASE_URL: str
-    BACKEND_API_KEY: Optional[str] = None
+    BACKEND_API_KEY: str
     
     # Feature Flags
     EMAIL_POLL_INTERVAL_SECONDS: int = 15
