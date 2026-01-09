@@ -62,6 +62,7 @@ class ConversationRepository:
                         WHERE c.end_timestamp IS NULL 
                         AND c.platform IN ('whatsapp', 'instagram')
                         AND c.start_timestamp >= CURRENT_DATE
+                        AND c.is_helpdesk = FALSE
                         AND COALESCE(
                             (SELECT MAX(created_at) FROM bkpm.chat_history WHERE session_id = c.id),
                             c.start_timestamp
@@ -74,6 +75,25 @@ class ConversationRepository:
         except Exception as e:
             logger.error(f"Error fetching stale sessions: {e}")
             return []
+
+    def is_helpdesk_session(self, conversation_id: str) -> bool:
+        try:
+            with Database.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT is_helpdesk
+                        FROM bkpm.conversations
+                        WHERE id = %s
+                        LIMIT 1
+                        """,
+                        (conversation_id,)
+                    )
+                    row = cursor.fetchone()
+                    return bool(row[0]) if row else False
+        except Exception as e:
+            logger.error(f"Error checking helpdesk status for {conversation_id}: {e}")
+            return False  
 
     def close_session(self, conversation_id: str):
         try:

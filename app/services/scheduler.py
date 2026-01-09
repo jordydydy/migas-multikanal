@@ -16,7 +16,7 @@ async def run_scheduler():
             stale_sessions = repo_conv.get_stale_sessions(minutes=5)
     
             if stale_sessions:
-                logger.info(f"🔍 Found {len(stale_sessions)} stale sessions.")
+                logger.info(f"Found {len(stale_sessions)} stale sessions.")
 
             for session in stale_sessions:
                 conv_id, platform, user_id = session

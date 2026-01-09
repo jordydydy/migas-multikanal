@@ -19,9 +19,6 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
             detail="Missing X-API-Key header"
         )
     
-    print(api_key, "API KEY ACCEPTED")
-    print(settings.X_API_KEY, "API KEY EXPECTED")
-    
     if api_key != settings.X_API_KEY:
         logger.warning(f"Invalid API key attempt: {api_key[:8]}...")
         raise HTTPException(

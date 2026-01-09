@@ -1,7 +1,7 @@
 import httpx
 import uuid
 import re
-from typing import Dict
+from typing import Dict, Optional
 from app.schemas.models import IncomingMessage
 from app.repositories.conversation import ConversationRepository
 from app.repositories.message import MessageRepository
@@ -27,11 +27,22 @@ class MessageOrchestrator:
 
     async def timeout_session(self, conversation_id: str, platform: str, user_id: str):
         adapter = self.adapters.get(platform)
-        if not adapter: return
+        if not adapter: 
+            return
+        
+        if self.repo_conv.is_helpdesk_session(conversation_id):
+            logger.info(f"SKIP TIMEOUT: Session {conversation_id} is helpdesk session (agent handling)")
+            return
+            
         logger.info(f"TIMEOUT: Auto-closing session {conversation_id} for {platform} user {user_id}")
         
         try:
-            await self.chatbot.ask(query="Terima Kasih", conversation_id=conversation_id, platform=platform, user_id=user_id)
+            await self.chatbot.ask(
+                query="Terima Kasih", 
+                conversation_id=conversation_id, 
+                platform=platform, 
+                user_id=user_id
+            )
         except Exception as e:
             logger.error(f"Failed to send close signal to AI: {e}")
 
@@ -55,13 +66,16 @@ class MessageOrchestrator:
 
     async def handle_feedback(self, msg: IncomingMessage):
         payload_str = msg.metadata.get("payload", "")
-        if "-" not in payload_str: return
+        if "-" not in payload_str: 
+            return
         try:
             feedback_type_raw, answer_id_raw = payload_str.split("-", 1)
-        except ValueError: return
+        except ValueError: 
+            return
         is_good = "good" in feedback_type_raw.lower()
         session_id = msg.conversation_id or self.repo_conv.get_latest_id(msg.platform_unique_id, msg.platform)
-        if not session_id: return
+        if not session_id: 
+            return
         backend_payload = {
             "session_id": session_id,
             "feedback": is_good,
@@ -110,7 +124,8 @@ class MessageOrchestrator:
             return
             
         adapter = self.adapters.get(platform)
-        if not adapter: return
+        if not adapter: 
+            return
         
         send_kwargs = {}
         if platform == "email":
@@ -128,9 +143,30 @@ class MessageOrchestrator:
         if answer_id and not is_helpdesk and not is_busy_message: 
             await adapter.send_feedback_request(user_id, answer_id)
 
+    def _check_helpdesk_session(self, msg: IncomingMessage) -> Optional[str]:
+        if msg.platform == "email":
+            return None  # Email doesn't use session continuity check
+            
+        # Check for active session
+        active_id = self.repo_conv.get_active_id(msg.platform_unique_id, msg.platform)
+        
+        if active_id:
+            # Check if it's a helpdesk session
+            if self.repo_conv.is_helpdesk_session(active_id):
+                logger.info(f"User {msg.platform_unique_id} has active helpdesk session: {active_id}")
+                return active_id
+        
+        return None
+
     def _ensure_conversation_id(self, msg: IncomingMessage):
         if msg.platform == "email":
             self._handle_email_conversation_id(msg)
+            return
+
+        helpdesk_session_id = self._check_helpdesk_session(msg)
+        if helpdesk_session_id:
+            msg.conversation_id = helpdesk_session_id
+            logger.info(f"Continuing helpdesk session {helpdesk_session_id}")
             return
 
         if not msg.conversation_id:
@@ -138,6 +174,7 @@ class MessageOrchestrator:
 
         if not msg.conversation_id:
             msg.conversation_id = str(uuid.uuid4())
+            logger.info(f"Created new session {msg.conversation_id} for {msg.platform_unique_id}")
 
     def _handle_email_conversation_id(self, msg: IncomingMessage):
         if not msg.metadata:
@@ -179,7 +216,8 @@ class MessageOrchestrator:
 
     async def process_message(self, msg: IncomingMessage):
         adapter = self.adapters.get(msg.platform)
-        if not adapter: return
+        if not adapter: 
+            return
 
         if not msg.conversation_id:
             self._ensure_conversation_id(msg)
@@ -191,7 +229,8 @@ class MessageOrchestrator:
             await adapter.send_typing_on(msg.platform_unique_id, message_id=msg_id)
             if msg.platform == "whatsapp" and msg_id and hasattr(adapter, 'mark_as_read'):
                 await adapter.mark_as_read(msg_id)
-        except Exception: pass
+        except Exception: 
+            pass
 
         success = await self.chatbot.ask(
             msg.query, 
@@ -202,8 +241,10 @@ class MessageOrchestrator:
         
         if not success:
             logger.error(f"Failed to push backend AI for conversation {msg.conversation_id}")
-            try: await adapter.send_typing_off(msg.platform_unique_id)
-            except Exception: pass
+            try: 
+                await adapter.send_typing_off(msg.platform_unique_id)
+            except Exception: 
+                pass
 
     def _save_email_metadata(self, msg: IncomingMessage):
         if msg.platform != "email" or not msg.conversation_id or not msg.metadata:
