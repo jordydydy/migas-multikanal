@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # Email Settings
     EMAIL_PROVIDER: Literal["gmail", "azure_oauth2", "unknown"] = "unknown"
-    EMAIL_HOST: str
+    EMAIL_HOST: str = "smtp.gmail.com"
     EMAIL_PORT: int = 587
     EMAIL_USER: Optional[str] = None
     EMAIL_PASS: Optional[str] = None
