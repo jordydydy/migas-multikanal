@@ -5,13 +5,10 @@ from app.api.dependencies import get_orchestrator
 from app.api.auth import verify_api_key
 from app.services.orchestrator import MessageOrchestrator
 from app.services.parsers import parse_whatsapp_payload, parse_instagram_payload
-from app.repositories.message import MessageRepository
 import logging
 
 logger = logging.getLogger("api.routes")
 router = APIRouter()
-
-_msg_repo = MessageRepository()
 
 @router.get("/whatsapp/webhook")
 def verify_whatsapp(
@@ -69,31 +66,11 @@ async def instagram_webhook(
             
     return {"status": "ok"}
 
-@router.post("/api/send/reply", dependencies=[Depends(verify_api_key)])
-async def receive_backend_reply(
-    request: Request,
-    bg_tasks: BackgroundTasks,
-    orchestrator: MessageOrchestrator = Depends(get_orchestrator)
-):
-    data = await request.json()
-    logger.info(f"Received reply callback from Backend: {data}")
-    
-    bg_tasks.add_task(orchestrator.send_manual_message, data)
-    
-    return {"status": "processed"}
-
 @router.post("/api/messages/process", dependencies=[Depends(verify_api_key)])
 async def process_message_internal(
     msg: IncomingMessage,
     bg_tasks: BackgroundTasks,
     orchestrator: MessageOrchestrator = Depends(get_orchestrator)
 ):
-    if msg.platform == "email" and msg.metadata:
-        unique_id = msg.metadata.get("graph_message_id") or msg.metadata.get("message_id")
-        
-        if unique_id and _msg_repo.is_processed(unique_id, "email"):
-            logger.info(f"Duplicate email blocked: {unique_id}")
-            return {"status": "duplicate", "message": "Already processed"}
-    
     bg_tasks.add_task(orchestrator.process_message, msg)
     return {"status": "queued"}

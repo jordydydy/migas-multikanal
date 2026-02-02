@@ -10,20 +10,13 @@ class Settings(BaseSettings):
     ENABLE_BACKGROUND_WORKER: bool = True 
     X_API_KEY: Optional[str] = None
 
-    # Backend API Configuration
-    BACKEND_API_BASE_URL: str
-    BACKEND_API_KEY: str
+    # Dify API Configuration
+    DIFY_API_BASE_URL: str
+    DIFY_API_KEY: str
     
     # Feature Flags
     EMAIL_POLL_INTERVAL_SECONDS: int = 15
     MAX_INPUT_CHARS: int = 6000
-
-    # Database
-    DB_HOST: str
-    DB_PORT: int
-    DB_NAME: str
-    DB_USER: str
-    DB_PASS: Optional[str] = None
 
     # Social Media Credentials
     INSTAGRAM_PAGE_ACCESS_TOKEN: Optional[str] = None
@@ -46,20 +39,6 @@ class Settings(BaseSettings):
     AZURE_CLIENT_SECRET: Optional[str] = None
     AZURE_TENANT_ID: Optional[str] = None
     AZURE_EMAIL_USER: Optional[str] = None
-
-    @property
-    def BACKEND_ASK_URL(self) -> str:
-        base = self.BACKEND_API_BASE_URL.rstrip("/")
-        return f"{base}/api/chat/multichannel/ask"
-    
-    @property
-    def BACKEND_FEEDBACK_URL(self) -> str:
-        base = self.BACKEND_API_BASE_URL.rstrip("/")
-        return f"{base}/api/chat/multichannel/feedback"
-    
-    @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 

@@ -268,14 +268,8 @@ def process_single_email(sender_email, body, metadata: dict):
     
     try:
         orchestrator = get_orchestrator()
-        try: 
-            loop = asyncio.get_event_loop()
-        except RuntimeError: 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        loop.run_until_complete(orchestrator.process_message(msg))
-        logger.info(f"✓ Email processed: {sender_email}")
+        orchestrator.process_message(msg)
+        logger.info(f"Email processed: {sender_email}")
     except Exception as err:
         logger.error(f"Internal Process Error: {err}")
         import traceback

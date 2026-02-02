@@ -1,4 +1,4 @@
-import httpx
+import requests
 import logging
 
 logger = logging.getLogger("adapters.utils")
@@ -28,22 +28,21 @@ def split_text_smartly(text: str, max_length: int = 4096) -> list[str]:
     
     return chunks
 
-async def make_meta_request(method: str, url: str, token: str, payload: dict = None) -> dict:
+def make_meta_request(method: str, url: str, token: str, payload: dict = None) -> dict:
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            if method.upper() == "POST":
-                resp = await client.post(url, json=payload, headers=headers)
-            else:
-                resp = await client.get(url, headers=headers)
+        if method.upper() == "POST":
+            resp = requests.post(url, json=payload, headers=headers, timeout=10)
+        else:
+            resp = requests.get(url, headers=headers, timeout=10)
             
         return {
-            "success": resp.is_success,
+            "success": resp.ok,
             "status_code": resp.status_code,
-            "data": resp.json() if resp.is_success else resp.text
+            "data": resp.json() if resp.ok else resp.text
         }
     except Exception as e:
         logger.error(f"Meta API Request Error: {e}")

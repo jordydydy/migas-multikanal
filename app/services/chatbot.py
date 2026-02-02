@@ -1,46 +1,67 @@
-import httpx
-import asyncio
-from datetime import datetime, timezone
-from app.core.config import settings
-from app.schemas.models import ChatbotResponse
+import requests
 import logging
+from typing import Dict, Any, Optional
+from app.core.config import settings
 
 logger = logging.getLogger("service.chatbot")
 
 class ChatbotClient:
+    def __init__(self):
+        self.base_url = settings.DIFY_API_BASE_URL.rstrip("/")
+        self.api_key = settings.DIFY_API_KEY
 
-    async def _fire_request(self, url: str, payload: dict, headers: dict):
-        try:
-            async with httpx.AsyncClient(timeout=None) as client:
-                await client.post(url, json=payload, headers=headers)
-        except Exception as e:
-            logger.error(f"Background request failed: {e}")
-
-    async def ask(self, query: str, conversation_id: str, platform: str, user_id: str) -> bool:
-        start_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        safe_conv_id = conversation_id or ""
+    def send_message(self, query: str, user_id: str, conversation_id: str = None, inputs: dict = None) -> Dict[str, Any]:
+        url = f"{self.base_url}/chat-messages"
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
 
         payload = {
+            "inputs": inputs or {},
             "query": query,
-            "platform": platform,
-            "platform_unique_id": user_id,
-            "conversation_id": safe_conv_id,
-            "start_timestamp": start_timestamp 
+            "response_mode": "blocking",
+            "user": user_id,
+            "conversation_id": conversation_id if conversation_id else "",
+            "files": []
         }
         
-        headers = {"Content-Type": "application/json"}
-        if settings.BACKEND_API_KEY:
-            headers["X-API-Key"] = settings.BACKEND_API_KEY
-
-        url = settings.BACKEND_ASK_URL
-        
-        logger.info(f"PUSH TO BACKEND: {url} | ConvID: {safe_conv_id}")
+        logger.info(f"Send to Dify [User: {user_id}]: {query[:50]}...")
         
         try:
-            asyncio.create_task(self._fire_request(url, payload, headers))
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            response.raise_for_status()
+            return response.json()
             
-            return True
-
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Dify API Error: {e}")
+            if e.response:
+                logger.error(f"Response: {e.response.text}")
+            return {"error": str(e)}
+            
+    def send_feedback(self, message_id: str, rating: str, user_id: str, content: str = None) -> bool:
+        url = f"{self.base_url}/messages/{message_id}/feedbacks"
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "rating": rating,     
+            "user": user_id,     
+            "content": content    
+        }
+        
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=10)
+            if resp.ok:
+                logger.info(f"Feedback sent for {message_id}: {rating}")
+                return True
+            else:
+                logger.error(f"Feedback Failed ({resp.status_code}): {resp.text}")
+                return False
         except Exception as e:
-            logger.error(f"Failed to create background task: {e}")
+            logger.error(f"Feedback Error: {e}")
             return False

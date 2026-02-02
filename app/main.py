@@ -1,14 +1,11 @@
 import threading
-import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.repositories.base import Database
 from app.api.routes import router as api_router
 from app.adapters.email.listener import start_email_listener
-from app.services.scheduler import run_scheduler
 import logging
 
 setup_logging()
@@ -34,22 +31,12 @@ def _setup_email_listener():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Database.initialize()
-    
-    scheduler_task = None
     
     if settings.ENABLE_BACKGROUND_WORKER:
         _setup_email_listener()
-        scheduler_task = asyncio.create_task(run_scheduler())
     
     yield
     
-    try:
-        if scheduler_task:
-            scheduler_task.cancel()
-            await scheduler_task
-    finally:
-        Database.close()
 
 app = FastAPI(
     title=settings.APP_NAME,

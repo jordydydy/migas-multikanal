@@ -15,17 +15,17 @@ class InstagramAdapter(BaseAdapter):
     def _clean_id(self, user_id: str) -> str:
         return user_id.replace('@instagram.com', '').strip()
 
-    async def send_typing_on(self, recipient_id: str, message_id: str = None):
+    def send_typing_on(self, recipient_id: str, message_id: str = None):
         if not self.token: return
         payload = {"recipient": {"id": self._clean_id(recipient_id)}, "sender_action": "typing_on"}
-        result = await make_meta_request("POST", self.base_url, self.token, payload)
+        make_meta_request("POST", self.base_url, self.token, payload)
 
-    async def send_typing_off(self, recipient_id: str):
+    def send_typing_off(self, recipient_id: str):
         if not self.token: return
         payload = {"recipient": {"id": self._clean_id(recipient_id)}, "sender_action": "typing_off"}
-        result = await make_meta_request("POST", self.base_url, self.token, payload)
+        make_meta_request("POST", self.base_url, self.token, payload)
 
-    async def send_message(self, recipient_id: str, text: str, **kwargs):
+    def send_message(self, recipient_id: str, text: str, **kwargs):
         if not self.token: return {"success": False}
         
         text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', text)
@@ -37,18 +37,12 @@ class InstagramAdapter(BaseAdapter):
                 "recipient": {"id": self._clean_id(recipient_id)},
                 "message": {"text": chunk}
             }
-            res = await make_meta_request("POST", self.base_url, self.token, payload)
+            res = make_meta_request("POST", self.base_url, self.token, payload)
             results.append(res)
-            
-            status = res.get("status_code")
-            if status == 200:
-                logger.info(f"[Instagram API] Message sent: 200 OK")
-            else:
-                logger.error(f"[Instagram API] Message failed: {status} - {res.get('data')}")
             
         return {"sent": True, "results": results}
 
-    async def send_feedback_request(self, recipient_id: str, answer_id: int):
+    def send_feedback_request(self, recipient_id: str, message_id: str):
         if not self.token: return {"success": False}
         
         payload = {
@@ -56,17 +50,9 @@ class InstagramAdapter(BaseAdapter):
             "message": {
                 "text": "Apakah jawaban ini membantu?",
                 "quick_replies": [
-                    {"content_type": "text", "title": "Yes", "payload": f"good-{answer_id}"},
-                    {"content_type": "text", "title": "No", "payload": f"bad-{answer_id}"}
+                    {"content_type": "text", "title": "Membantu", "payload": f"like-{message_id}"},
+                    {"content_type": "text", "title": "Tidak", "payload": f"dislike-{message_id}"}
                 ]
             }
         }
-        result = await make_meta_request("POST", self.base_url, self.token, payload)
-        
-        status = result.get("status_code")
-        if status == 200:
-            logger.info(f"[Instagram API] Feedback request sent: 200 OK")
-        else:
-            logger.error(f"[Instagram API] Feedback request failed: {status} - {result.get('data')}")
-        
-        return result
+        return make_meta_request("POST", self.base_url, self.token, payload)

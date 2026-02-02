@@ -1,4 +1,4 @@
-import asyncio
+import time
 import logging
 from app.api.dependencies import get_orchestrator
 from app.repositories.conversation import ConversationRepository
@@ -8,7 +8,7 @@ logger = logging.getLogger("service.scheduler")
 async def run_scheduler():
     logger.info("Session Timeout Scheduler Started...")
     repo_conv = ConversationRepository()    
-    await asyncio.sleep(5)
+    time.sleep(5)
 
     while True:
         try:
@@ -21,11 +21,12 @@ async def run_scheduler():
             for session in stale_sessions:
                 conv_id, platform, user_id = session
                 
-                await orchestrator.timeout_session(conv_id, platform, user_id)
+                # Synchronous call
+                orchestrator.timeout_session(conv_id, platform, user_id)
                 
-                await asyncio.sleep(1)
+                time.sleep(1)
 
         except Exception as e:
             logger.error(f"Scheduler Error: {e}")
         
-        await asyncio.sleep(60)
+        time.sleep(60)
