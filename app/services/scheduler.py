@@ -1,32 +1,33 @@
 import time
 import logging
-from app.api.dependencies import get_orchestrator
 from app.repositories.conversation import ConversationRepository
+from app.api.dependencies import get_orchestrator
 
 logger = logging.getLogger("service.scheduler")
 
-async def run_scheduler():
-    logger.info("Session Timeout Scheduler Started...")
+def run_scheduler():
+    logger.info("Session Timeout Scheduler Started (3 Minutes Policy)...")
     repo_conv = ConversationRepository()    
+    
     time.sleep(5)
 
     while True:
         try:
-            orchestrator = get_orchestrator()
-            stale_sessions = repo_conv.get_stale_sessions(minutes=15)
+            stale_sessions = repo_conv.get_stale_sessions(seconds=180)
     
             if stale_sessions:
                 logger.info(f"Found {len(stale_sessions)} stale sessions.")
+                
+                orchestrator = get_orchestrator()
 
-            for session in stale_sessions:
-                conv_id, platform, user_id = session
-                
-                # Synchronous call
-                orchestrator.timeout_session(conv_id, platform, user_id)
-                
-                time.sleep(1)
+                for session in stale_sessions:
+                    user_id, platform, conversation_id = session
+                    
+                    orchestrator.timeout_session(user_id, platform)
+                    
+                    logger.info(f"Session timeout processed for {user_id}")
 
         except Exception as e:
             logger.error(f"Scheduler Error: {e}")
         
-        time.sleep(60)
+        time.sleep(30)

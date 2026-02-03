@@ -1,14 +1,18 @@
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List
 from app.schemas.models import IncomingMessage
 from app.services.chatbot import ChatbotClient
 from app.adapters.base import BaseAdapter
+from app.repositories.conversation import ConversationRepository
 from app.core.config import settings
 import logging
 
 logger = logging.getLogger("service.orchestrator")
 
-_SESSION_STORE: Dict[str, str] = {}
+RESET_KEYWORDS: List[str] = [
+    "terima kasih", "terimakasih", "makasih", "trimakasih", "trims",
+    "thank you", "thankyou", "thanks"
+]
 
 class MessageOrchestrator:
     def __init__(
@@ -18,36 +22,21 @@ class MessageOrchestrator:
     ):
         self.chatbot = chatbot
         self.adapters = adapters
+        self.repo_conv = ConversationRepository()
 
-    def _get_conversation_id(self, user_id: str) -> str:
-        return _SESSION_STORE.get(user_id, "")
-
-    def _set_conversation_id(self, user_id: str, conversation_id: str):
-        if conversation_id:
-            _SESSION_STORE[user_id] = conversation_id
+    def timeout_session(self, user_id: str, platform: str):
+        adapter = self.adapters.get(platform)
+        if adapter:
+            try:
+                timeout_msg = "Sesi Anda telah berakhir. Silakan kirim pesan baru untuk memulai percakapan kembali."
+                adapter.send_message(user_id, timeout_msg)
+            except Exception as e:
+                logger.error(f"Failed to send timeout message to {user_id}: {e}")
+        
+        self.repo_conv.clear_session(user_id)
 
     def handle_feedback(self, msg: IncomingMessage):
-        payload_str = msg.metadata.get("payload", "")
-        user_id = msg.platform_unique_id
-        
-        if "-" not in payload_str: 
-            return
-
-        try:
-            rating_raw, message_id = payload_str.split("-", 1)
-            
-            rating = "like" if "like" in rating_raw.lower() or "good" in rating_raw.lower() else "dislike"
-            
-            content = f"Feedback received via {msg.platform}"
-            
-            self.chatbot.send_feedback(message_id, rating, user_id, content)
-            
-            adapter = self.adapters.get(msg.platform)
-            if adapter:
-                adapter.send_message(user_id, "Terima kasih atas masukan Anda!")
-                
-        except Exception as e:
-            logger.error(f"Handle Feedback Error: {e}")
+        return
 
     def process_message(self, msg: IncomingMessage):
         adapter = self.adapters.get(msg.platform)
@@ -55,8 +44,22 @@ class MessageOrchestrator:
             return
 
         user_id = msg.platform_unique_id
-        current_conv_id = self._get_conversation_id(user_id)
+        
+        clean_query = msg.query.strip().lower()
+        
+        is_reset = any(keyword in clean_query for keyword in RESET_KEYWORDS)
 
+        if is_reset:
+            logger.info(f"User {user_id} sent reset keyword. Clearing local session.")
+            
+            reply_text = "Sama-sama! Senang bisa membantu. Sesi percakapan ini telah di-akhiri."
+            adapter.send_message(user_id, reply_text)
+            
+            self.repo_conv.clear_session(user_id)
+            return
+
+        current_conv_id = self.repo_conv.get_active_session(user_id, msg.platform)
+        
         try:
             msg_id = msg.metadata.get("message_id") if msg.metadata else None
             adapter.send_typing_on(user_id, message_id=msg_id)
@@ -84,10 +87,9 @@ class MessageOrchestrator:
             answer = resp.get("answer", "")
             new_conv_id = resp.get("conversation_id")
             
-            dify_message_id = resp.get("id") 
-            
+            # 4. Save new ID to DB
             if new_conv_id:
-                self._set_conversation_id(user_id, new_conv_id)
+                self.repo_conv.save_session(user_id, msg.platform, new_conv_id)
             
             send_kwargs = {}
             if msg.platform == "email":
@@ -98,9 +100,6 @@ class MessageOrchestrator:
                     send_kwargs["in_reply_to"] = msg.metadata.get("message_id")
 
             adapter.send_message(user_id, answer, **send_kwargs)
-            
-            if dify_message_id and len(answer) > 10:
-                adapter.send_feedback_request(user_id, dify_message_id)
 
         try: 
             adapter.send_typing_off(user_id)

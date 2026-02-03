@@ -19,20 +19,23 @@ class Database:
                 "keepalives_count": 5
             }
             
-            cls._pool = ConnectionPool(
-                conninfo=(
-                    f"dbname={settings.DB_NAME} "
-                    f"user={settings.DB_USER} "
-                    f"password={settings.DB_PASS} "
-                    f"host={settings.DB_HOST} "
-                    f"port={settings.DB_PORT}"
-                ),
-                min_size=1,
-                max_size=10,
-                timeout=30,
-                kwargs=conn_args, 
-                check=ConnectionPool.check_connection 
-            )
+            try:
+                cls._pool = ConnectionPool(
+                    conninfo=(
+                        f"dbname={settings.DB_NAME} "
+                        f"user={settings.DB_USER} "
+                        f"password={settings.DB_PASS} "
+                        f"host={settings.DB_HOST} "
+                        f"port={settings.DB_PORT}"
+                    ),
+                    min_size=1,
+                    max_size=10,
+                    timeout=30,
+                    kwargs=conn_args
+                )
+            except Exception as e:
+                logger.error(f"DB Connection Failed: {e}")
+                raise
 
     @classmethod
     def close(cls):
@@ -47,7 +50,3 @@ class Database:
         
         with cls._pool.connection() as conn:
             yield conn
-
-def get_db_connection():
-    with Database.get_connection() as conn:
-        yield conn

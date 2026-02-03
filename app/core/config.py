@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     DIFY_API_BASE_URL: str
     DIFY_API_KEY: str
     
+    # Database Configuration (Restored)
+    DB_HOST: str
+    DB_PORT: int
+    DB_NAME: str
+    DB_USER: str
+    DB_PASS: str
+
     # Feature Flags
     EMAIL_POLL_INTERVAL_SECONDS: int = 15
     MAX_INPUT_CHARS: int = 6000

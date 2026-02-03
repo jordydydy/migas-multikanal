@@ -42,26 +42,19 @@ class ChatbotClient:
             
     def send_feedback(self, message_id: str, rating: str, user_id: str, content: str = None) -> bool:
         url = f"{self.base_url}/messages/{message_id}/feedbacks"
-        
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        
         payload = {
-            "rating": rating,     
-            "user": user_id,     
-            "content": content    
+            "rating": rating,
+            "user": user_id,
+            "content": content
         }
         
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=10)
-            if resp.ok:
-                logger.info(f"Feedback sent for {message_id}: {rating}")
-                return True
-            else:
-                logger.error(f"Feedback Failed ({resp.status_code}): {resp.text}")
-                return False
+            return resp.ok
         except Exception as e:
             logger.error(f"Feedback Error: {e}")
             return False
