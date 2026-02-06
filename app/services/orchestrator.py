@@ -1,3 +1,5 @@
+# app/services/orchestrator.py
+
 import time
 from typing import Dict, Any, List
 from app.schemas.models import IncomingMessage
@@ -38,7 +40,8 @@ class MessageOrchestrator:
     def handle_feedback(self, msg: IncomingMessage):
         return
 
-    def process_message(self, msg: IncomingMessage):
+    # PERUBAHAN UTAMA: Ubah menjadi ASYNC
+    async def process_message(self, msg: IncomingMessage):
         adapter = self.adapters.get(msg.platform)
         if not adapter: 
             return
@@ -53,6 +56,7 @@ class MessageOrchestrator:
             logger.info(f"User {user_id} sent reset keyword. Clearing local session.")
             
             reply_text = "Sama-sama! Senang bisa membantu. Sesi percakapan ini telah di-akhiri."
+            # Note: adapter.send_message biasanya sync, tidak perlu await kecuali adapter diubah jadi async
             adapter.send_message(user_id, reply_text)
             
             self.repo_conv.clear_session(user_id)
@@ -68,32 +72,33 @@ class MessageOrchestrator:
         except Exception: 
             pass
 
-        inputs = {
-            "platform": msg.platform,
-            "sender_name": msg.metadata.get("sender_name", "Unknown")
-        }
-        
-        resp = self.chatbot.send_message(
-            query=msg.query,
-            user_id=user_id,
+        # PERUBAHAN: Panggil chatbot dengan parameter baru dan AWAIT
+        # Parameter: message, conversation_id, user_id, platform, user_name
+        resp = await self.chatbot.send_message(
+            message=msg.query,
             conversation_id=current_conv_id,
-            inputs=inputs
+            user_id=user_id,
+            platform=msg.platform,
+            user_name=msg.metadata.get("sender_name", "Unknown")
         )
         
         if "error" in resp:
-            logger.error(f"Dify Error: {resp['error']}")
-            adapter.send_message(user_id, "Mohon maaf, sistem sedang sibuk. Silakan coba lagi nanti.")
+            # Jika ada error, ambil pesan error atau default answer
+            logger.error(f"BE Main Error: {resp.get('error')}")
+            fallback_msg = resp.get("answer", "Mohon maaf, sistem sedang sibuk. Silakan coba lagi nanti.")
+            adapter.send_message(user_id, fallback_msg)
         else:
             answer = resp.get("answer", "")
             new_conv_id = resp.get("conversation_id")
             
-            # 4. Save new ID to DB
+            # 4. Save new ID to DB (penting agar history berlanjut)
             if new_conv_id:
                 self.repo_conv.save_session(user_id, msg.platform, new_conv_id)
             
             send_kwargs = {}
             if msg.platform == "email":
                 send_kwargs["subject"] = f"Re: {msg.metadata.get('subject', 'Inquiry')}"
+                # Handle azure oauth logic if needed
                 if settings.EMAIL_PROVIDER == "azure_oauth2":
                     send_kwargs["graph_message_id"] = msg.metadata.get("graph_message_id")
                 else:

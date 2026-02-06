@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     AZURE_TENANT_ID: Optional[str] = None
     AZURE_EMAIL_USER: Optional[str] = None
 
+    BE_MAIN_URL: str = "http://localhost:9798/api/live-chat/internal/chat/bot" # Sesuaikan host
+    INTERNAL_API_KEY: str = "migas-jaya-jaya-123" # Harus sama dengan BE Main
+
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
 settings = Settings()

@@ -1,60 +1,45 @@
-import requests
+# app/services/chatbot.py
+
+import httpx
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from app.core.config import settings
 
 logger = logging.getLogger("service.chatbot")
 
 class ChatbotClient:
     def __init__(self):
-        self.base_url = settings.DIFY_API_BASE_URL.rstrip("/")
-        self.api_key = settings.DIFY_API_KEY
-
-    def send_message(self, query: str, user_id: str, conversation_id: str = None, inputs: dict = None) -> Dict[str, Any]:
-        url = f"{self.base_url}/chat-messages"
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+        self.api_url = settings.BE_MAIN_URL
+        self.headers = {
+            "Content-Type": "application/json",
+            "x-internal-key": settings.INTERNAL_API_KEY
         }
 
+    # Ubah return type hint menjadi Dict
+    async def send_message(self, message: str, conversation_id: str, user_id: str, platform: str, user_name: str = "User") -> Dict[str, Any]:
         payload = {
-            "inputs": inputs or {},
-            "query": query,
-            "response_mode": "blocking",
-            "user": user_id,
-            "conversation_id": conversation_id if conversation_id else "",
-            "files": []
+            "query": message,
+            "inputs": {},
+            "conversation_id": conversation_id,
+            "platform": platform,
+            "external_user_id": user_id,
+            "user_name": user_name
         }
-        
-        logger.info(f"Send to Dify [User: {user_id}]: {query[:50]}...")
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=60)
-            response.raise_for_status()
-            return response.json()
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Dify API Error: {e}")
-            if e.response:
-                logger.error(f"Response: {e.response.text}")
-            return {"error": str(e)}
-            
-    def send_feedback(self, message_id: str, rating: str, user_id: str, content: str = None) -> bool:
-        url = f"{self.base_url}/messages/{message_id}/feedbacks"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "rating": rating,
-            "user": user_id,
-            "content": content
-        }
-        
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=10)
-            return resp.ok
-        except Exception as e:
-            logger.error(f"Feedback Error: {e}")
-            return False
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self.api_url, 
+                    json=payload, 
+                    headers=self.headers, 
+                    timeout=120.0
+                )
+                response.raise_for_status()
+                return response.json()
+                
+            except httpx.RequestError as e:
+                logger.error(f"Error communicating with BE Main: {e}")
+                return {"error": str(e), "answer": "Maaf, sedang ada gangguan pada sistem AI kami."}
+            except Exception as e:
+                logger.error(f"Unexpected error in ChatbotService: {e}")
+                return {"error": str(e), "answer": "Maaf, terjadi kesalahan yang tidak terduga."}
